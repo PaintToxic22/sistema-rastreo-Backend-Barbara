@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const { verificarToken, verificarRol } = require('../middleware/auth');
 
@@ -27,10 +28,10 @@ router.post('/registro', async (req, res) => {
       });
     }
 
-    // Crear nuevo usuario
+    // ✅ Crear nuevo usuario (bcrypt se aplica automáticamente en pre('save'))
     const nuevoUsuario = new User({
       email,
-      password,
+      password, // ✅ Se hashea en el pre('save')
       nombre,
       rol: rol || 'usuario',
       telefono,
@@ -59,7 +60,7 @@ router.post('/registro', async (req, res) => {
   }
 });
 
-// Login - OPCIÓN 1: SIN HASHEAR (como tu profesor)
+// ✅ Login - CON BCRYPT
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -71,17 +72,25 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    console.log('🔐 Intento de login:', email);
+
     // Buscar usuario
     const usuario = await User.findOne({ email });
     if (!usuario) {
+      console.log('❌ Usuario no encontrado:', email);
       return res.status(401).json({ 
         success: false, 
         message: 'Email o contraseña incorrectos' 
       });
     }
 
-    // Comparar contraseña SIN HASHEAR (como tu profesor)
-    if (usuario.password !== password) {
+    // ✅ Comparar contraseña con bcrypt
+    const passwordValida = await usuario.compararPassword(password);
+    
+    console.log('🔍 Password válida:', passwordValida);
+    
+    if (!passwordValida) {
+      console.log('❌ Contraseña incorrecta');
       return res.status(401).json({ 
         success: false, 
         message: 'Email o contraseña incorrectos' 
@@ -90,13 +99,14 @@ router.post('/login', async (req, res) => {
 
     // Verificar si el usuario está activo
     if (!usuario.activo) {
+      console.log('❌ Usuario inactivo');
       return res.status(403).json({ 
         success: false, 
         message: 'Usuario inactivo' 
       });
     }
 
-    // Generar JWT
+    // ✅ Generar JWT
     const token = jwt.sign(
       {
         id: usuario._id,
@@ -107,6 +117,8 @@ router.post('/login', async (req, res) => {
       process.env.JWT_SECRET || 'tu_secreto_aqui',
       { expiresIn: process.env.JWT_EXPIRE || '24h' }
     );
+
+    console.log('✅ Login exitoso para:', email);
 
     res.json({
       success: true,
@@ -180,15 +192,17 @@ router.post('/cambiar-password', verificarToken, async (req, res) => {
 
     const usuario = await User.findById(req.usuario.id);
 
-    // Verificar contraseña actual - SIN HASHEAR
-    if (usuario.password !== passwordActual) {
+    // ✅ Verificar contraseña actual CON BCRYPT
+    const passwordValida = await usuario.compararPassword(passwordActual);
+    
+    if (!passwordValida) {
       return res.status(401).json({ 
         success: false, 
         message: 'Contraseña actual incorrecta' 
       });
     }
 
-    // Actualizar contraseña
+    // ✅ Actualizar contraseña (se hashea en pre('save'))
     usuario.password = passwordNueva;
     await usuario.save();
 
